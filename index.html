@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meine Weihnachts-Wunschliste 🎄</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #333;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        .font-festive {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+        }
+
+        /* Subtle Snow Effect */
+        .snow-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .snowflake {
+            position: absolute;
+            top: -10px;
+            color: white;
+            font-size: 1.5em;
+            opacity: 0.8;
+            user-select: none;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% { transform: translateY(-10vh) translateX(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(110vh) translateX(20px) rotate(360deg); opacity: 0.3; }
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .custom-checkbox {
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            background-color: white;
+        }
+
+        .custom-checkbox:checked {
+            background-color: #166534; /* Green */
+            border-color: #166534;
+        }
+
+        .custom-checkbox:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .custom-checkbox:disabled {
+            background-color: #d1d5db;
+            border-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        .custom-checkbox:disabled:checked {
+            background-color: #9ca3af;
+        }
+
+        .strike-through {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+
+        #app-content {
+            display: none;
+            position: relative;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Snowflakes -->
+    <div class="snow-container" id="snow-container"></div>
+
+    <!-- Role Selection Modal -->
+    <div id="role-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="glass-card rounded-2xl p-8 max-w-md w-full text-center transform transition-all">
+            <h1 class="font-festive text-4xl text-green-800 mb-2">Ho Ho Ho! 🎅</h1>
+            <p class="text-gray-600 mb-8">Bevor wir die Wunschliste öffnen, wer bist du?</p>
+            
+            <div class="space-y-4">
+                <button onclick="selectRole('owner')" class="w-full py-3 px-4 bg-red-700 hover:bg-red-800 text-white rounded-xl font-medium transition-colors shadow-lg shadow-red-900/20 flex items-center justify-center gap-2">
+                    <span>🎁</span> Ich bin der Wünschende
+                </button>
+                <button onclick="selectRole('gifter')" class="w-full py-3 px-4 bg-green-700 hover:bg-green-800 text-white rounded-xl font-medium transition-colors shadow-lg shadow-green-900/20 flex items-center justify-center gap-2">
+                    <span>🤫</span> Ich bin ein Schenker
+                </button>
+            </div>
+            <p class="text-xs text-gray-500 mt-6">Die Auswahl entscheidet, ob du sehen kannst, was bereits gekauft wurde.</p>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main id="app-content" class="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8 pt-12 pb-24">
+        <header class="text-center mb-12">
+            <h1 class="font-festive text-5xl sm:text-6xl text-white mb-4 drop-shadow-lg text-yellow-400">Meine Weihnachts-Wünsche</h1>
+            <p class="text-green-100 text-lg sm:text-xl max-w-2xl mx-auto drop-shadow-md">
+                Ein paar kleine und große Dinge, die mir eine Freude bereiten würden. 🎄✨
+            </p>
+        </header>
+
+        <div id="wishlist-container" class="space-y-12">
+            <!-- Categories will be injected here via JS -->
+        </div>
+
+        <footer class="mt-16 text-center text-white/50 text-sm">
+            <p>Frohe Weihnachten! 🌟</p>
+        </footer>
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Generate Snow
+        const snowContainer = document.getElementById('snow-container');
+        for (let i = 0; i < 40; i++) {
+            const flake = document.createElement('div');
+            flake.classList.add('snowflake');
+            flake.textContent = '❄';
+            flake.style.left = `${Math.random() * 100}vw`;
+            flake.style.animationDuration = `${Math.random() * 3 + 4}s`;
+            flake.style.animationDelay = `${Math.random() * 5}s`;
+            flake.style.opacity = Math.random();
+            flake.style.fontSize = `${Math.random() * 10 + 10}px`;
+            snowContainer.appendChild(flake);
+        }
+
+        // Data Structure
+        const categories = [
+            {
+                title: "Tauchausrüstung & Zubehör 🤿",
+                items: [
+                    { id: 'item-oring', name: 'O-Ring SOS-Set für Taucher Blau', url: 'https://amzn.eu/d/0fAOdPAN', priceHint: 'Günstig' },
+                    { id: 'item-writing', name: 'Cressi Writing Board', url: 'https://amzn.eu/d/0bot8sRA', priceHint: 'Günstig' },
+                    { id: 'item-strap', name: 'Silikon-Auswechsel-Strap für Garmin Descent G1 (blau, 22mm)', url: 'https://amzn.eu/d/03IPe6MW', priceHint: 'Mittel' },
+                    { id: 'item-knife', name: 'Dive knife leg strap', url: 'https://tauchwerkstatt.eu/products/xsscuba-neoprene-knife-wrap-black?variant=47000338071891', priceHint: 'Mittel' },
+                    { id: 'item-bag', name: 'Dive gear bag', url: 'https://amzn.eu/d/0bhaPJzH', priceHint: 'Mittel' },
+                    { id: 'item-socks', name: 'Sharkskin T2 Chillproof Socks XS', url: 'https://tauchwerkstatt.eu/products/sharkskin-t2-chillproof-socks-3xl?variant=47610173194579', priceHint: 'Höher' }
+                ]
+            },
+            {
+                title: "Outdoor & Camping ⛺",
+                items: [
+                    { id: 'item-cutlery', name: 'Camping Cutlery', url: 'https://amzn.eu/d/02YGp7qQ', priceHint: 'Günstig' },
+                    { id: 'item-crocs', name: "Crocs Kids' Classic Clog Gr.37-38 (Tac Green oder Espresso)", url: 'https://www.crocs.de/p/kids-classic-clog/206991.html', priceHint: 'Mittel' },
+                    { id: 'item-pants', name: 'Kawa Club Cicada Pants Brown Size S', url: 'https://kawa.club/products/cicada-pants-brown?variant=53373998760220', priceHint: 'Höher' }
+                ]
+            },
+            {
+                title: "Pflege & Beauty ✨",
+                items: [
+                    { id: 'item-exfoliator', name: 'The Ordinary Exfoliator', url: 'https://www.amazon.de/dp/B0B5M2VD5B/', priceHint: 'Günstig' },
+                    { id: 'item-sunscreen', name: 'La Roche Posay Anthelios Gesichts-Sonnenschutz', url: 'https://www.shop-apotheke.com/beauty/18257573/la-roche-posay-anthelios-uvmune-400-oil-control-fluid-sonnenschutz-fuer-empfindliche-haut-mit-sehr-hohem-uv-schutz-lsf-50-fuer-oelige-haut-geeignet.htm', priceHint: 'Mittel' }
+                ]
+            }
+        ];
+
+        // Global State
+        let userRole = null;
+        let itemStatuses = {}; 
+        let db;
+        let auth;
+        let appId = typeof __app_id !== 'undefined' ? __app_id : 'default-wishlist-app';
+        let currentUserId = null;
+
+        // Make selectRole globally accessible
+        window.selectRole = async (role) => {
+            userRole = role;
+            document.getElementById('role-modal').style.display = 'none';
+            document.getElementById('app-content').style.display = 'block';
+            await initApp();
+        };
+
+        async function initApp() {
+            try {
+                // Initialize Firebase
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Authenticate
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                currentUserId = auth.currentUser?.uid;
+
+                if (!currentUserId) {
+                    console.error("Authentication failed");
+                    return;
+                }
+
+                // If Gifter, listen to changes
+                if (userRole === 'gifter') {
+                    const statusesRef = collection(db, 'artifacts', appId, 'public', 'data', 'wishlist_statuses');
+                    
+                    onSnapshot(statusesRef, (snapshot) => {
+                        itemStatuses = {};
+                        snapshot.forEach((doc) => {
+                            itemStatuses[doc.id] = doc.data();
+                        });
+                        renderWishlist(); // Re-render when data changes
+                    }, (error) => {
+                        console.error("Fehler beim Laden der Listen-Daten:", error);
+                    });
+                } else {
+                    // Owner just renders static list without statuses
+                    renderWishlist();
+                }
+
+            } catch (error) {
+                console.error("Error initializing app:", error);
+                // Fallback render if offline
+                renderWishlist();
+            }
+        }
+
+        window.toggleItemStatus = async (itemId, isChecked) => {
+            if (userRole !== 'gifter' || !currentUserId || !db) return;
+            
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'wishlist_statuses', itemId);
+                await setDoc(docRef, {
+                    purchased: isChecked,
+                    purchasedBy: currentUserId,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            } catch (error) {
+                console.error("Fehler beim Speichern:", error);
+            }
+        };
+
+        function renderWishlist() {
+            const container = document.getElementById('wishlist-container');
+            container.innerHTML = '';
+
+            categories.forEach(cat => {
+                const section = document.createElement('section');
+                
+                // Category Title
+                const title = document.createElement('h2');
+                title.className = 'font-festive text-3xl text-yellow-400 mb-6 drop-shadow-md border-b border-yellow-500/30 pb-2 inline-block';
+                title.textContent = cat.title;
+                section.appendChild(title);
+
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+
+                cat.items.forEach(item => {
+                    const status = itemStatuses[item.id] || { purchased: false };
+                    const isPurchased = status.purchased;
+                    
+                    // Owner never sees purchased status
+                    const displayPurchased = userRole === 'gifter' && isPurchased;
+
+                    const card = document.createElement('div');
+                    card.className = `glass-card rounded-xl p-5 flex items-center justify-between gap-4 transition-all hover:-translate-y-1 ${displayPurchased ? 'opacity-70' : ''}`;
+
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'flex-1';
+                    
+                    const itemName = document.createElement('h3');
+                    itemName.className = `font-medium text-lg text-gray-800 leading-tight mb-2 ${displayPurchased ? 'strike-through' : ''}`;
+                    itemName.textContent = item.name;
+
+                    const linkDiv = document.createElement('div');
+                    linkDiv.className = 'flex items-center gap-3 mt-3';
+
+                    const link = document.createElement('a');
+                    link.href = item.url;
+                    link.target = "_blank";
+                    link.className = `inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${displayPurchased ? 'bg-gray-200 text-gray-500 pointer-events-none' : 'bg-red-700 hover:bg-red-800 text-white'}`;
+                    link.innerHTML = `Zum Produkt <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>`;
+                    
+                    if(displayPurchased) {
+                         const badge = document.createElement('span');
+                         badge.className = "text-xs font-bold uppercase tracking-wider text-green-700 bg-green-100 px-2 py-1 rounded";
+                         badge.textContent = "Bereits verschenkt";
+                         linkDiv.appendChild(badge);
+                    } else {
+                         linkDiv.appendChild(link);
+                    }
+
+                    infoDiv.appendChild(itemName);
+                    infoDiv.appendChild(linkDiv);
+                    card.appendChild(infoDiv);
+
+                    // Add Checkbox only for Gifters
+                    if (userRole === 'gifter') {
+                        const checkDiv = document.createElement('div');
+                        checkDiv.className = 'flex flex-col items-center gap-1 pl-4 border-l border-gray-200/50';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.className = 'custom-checkbox';
+                        checkbox.checked = isPurchased;
+                        
+                        // Disable if someone else bought it
+                        if (isPurchased && status.purchasedBy !== currentUserId) {
+                            checkbox.disabled = true;
+                            checkbox.title = "Bereits von jemand anderem ausgewählt";
+                        }
+
+                        checkbox.addEventListener('change', (e) => toggleItemStatus(item.id, e.target.checked));
+                        
+                        const checkLabel = document.createElement('span');
+                        checkLabel.className = 'text-[10px] text-gray-500 uppercase tracking-wider font-semibold text-center leading-none mt-1';
+                        checkLabel.innerHTML = 'Als Geschenk<br>markieren';
+
+                        checkDiv.appendChild(checkbox);
+                        checkDiv.appendChild(checkLabel);
+                        card.appendChild(checkDiv);
+                    }
+
+                    grid.appendChild(card);
+                });
+
+                section.appendChild(grid);
+                container.appendChild(section);
+            });
+        }
+    </script>
+</body>
+</html>
